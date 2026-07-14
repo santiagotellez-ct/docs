@@ -1,0 +1,215 @@
+---
+title: "Edge Functions (API)"
+description: "Referencia de las 14 Supabase Edge Functions desplegadas en Deno: endpoints, parámetros, comportamiento y autenticación."
+---
+
+## Generalidades
+
+Las Edge Functions son el único punto de integración con servicios externos. El cliente las invoca con `supabase.functions.invoke(nombre, { body })`. Todas corren en Deno Runtime sobre la infraestructura de Supabase.
+
+**URL base:** `https://esuyjulkvrylglncenhe.supabase.co/functions/v1/<nombre>`
+
+### Autenticación
+
+La mayoría requieren un JWT válido de Supabase en el header `Authorization: Bearer <token>`. Tres funciones tienen `verify_jwt = false` (configurado en `supabase/config.toml`) porque las invocan servicios externos sin sesión de usuario:
+
+| Función | JWT requerido |
+|---------|--------------|
+| `slack-interactions` | No |
+| `aimfox-contact-webhook` | No |
+| `aimfox-relay` | No |
+| Resto | Sí |
+
+---
+
+## Funciones de Google Calendar
+
+### `create-calendar-event`
+
+Crea un evento en el Google Calendar primario del AE, genera Meet link automáticamente.
+
+**Invocado desde:** `src/hooks/useCompanyData.ts:436` (dentro de `scheduleMeeting`)
+
+**Body:**
+```json
+{
+  "summary": "Discovery call Empresa X x Colombia Tech Week",
+  "description": "Notas opcionales",
+  "scheduled_at": "2026-07-10T14:00:00Z",
+  "duration_minutes": 30,
+  "ae_email": "ae@colombiatechweek.co",
+  "contact_emails": ["contacto@empresa.com"]
+}
+```
+
+**Response exitosa (200):**
+```json
+{
+  "event_id": "abc123xyz",
+  "html_link": "https://calendar.google.com/event?eid=...",
+  "meet_link": "https://meet.google.com/xxx-yyyy-zzz"
+}
+```
+
+**Errores:**
+| HTTP | Condición |
+|------|-----------|
+| 400 | `summary` o `scheduled_at` faltantes |
+| 500 | `LOVABLE_API_KEY` no configurada, error de Google Calendar API |
+
+---
+
+### `delete-calendar-event`
+
+Elimina un evento de Google Calendar por su ID.
+
+**Invocado desde:** `src/hooks/useCompanyData.ts:680` (dentro de `deleteMeeting`)
+
+**Body:**
+```json
+{ "event_id": "abc123xyz" }
+```
+
+**Response exitosa (200):** `{ "ok": true }`
+
+---
+
+### `update-calendar-event`
+
+Actualiza la fecha/hora de un evento existente.
+
+**Invocado desde:** `src/hooks/useCompanyData.ts:706` (dentro de `updateMeetingSchedule`)
+
+**Body:**
+```json
+{
+  "event_id": "abc123xyz",
+  "scheduled_at": "2026-07-11T10:00:00Z",
+  "duration_minutes": 30
+}
+```
+
+---
+
+## Funciones de Aimfox / n8n
+
+### `aimfox-relay`
+
+Relay que reenvía datos de contacto al webhook de n8n, que a su vez los procesa en Aimfox (LinkedIn outreach). No requiere JWT.
+
+**Invocado desde:** `src/hooks/useCompanyData.ts:583` (dentro de `addContact`, solo si el contacto tiene LinkedIn)
+
+**Body (pass-through):**
+```json
+{
+  "linkedin": "https://linkedin.com/in/...",
+  "nombre": "Nombre Contacto",
+  "cargo": "CEO",
+  "email": "contacto@empresa.com",
+  "telefono": ""
+}
+```
+
+**Destino:** `https://n8n-7391.colombiatechweek.co/webhook/aimfox-contact`
+
+**Response (200 siempre, incluso si n8n falla):**
+```json
+{ "ok": true, "status": 200, "body": "..." }
+```
+
+---
+
+### `aimfox-contact-webhook`
+
+Webhook receptor que n8n o Aimfox puede llamar para notificar eventos. No requiere JWT. El código fuente está en `supabase/functions/aimfox-contact-webhook/index.ts`.
+
+{/* TODO: verificar con Santiago qué hace exactamente este webhook — el código no fue leído en detalle */}
+
+---
+
+## Funciones de Slack
+
+### `send-daily-report`
+
+Envía un reporte diario al canal de Slack con métricas del pipeline SDR: contactos del día, reuniones agendadas, tareas vencidas. Incluye @-menciones a los SDRs.
+
+**Variables de entorno requeridas:** `SLACK_BOT_TOKEN`, `SLACK_REPORT_CHANNEL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+
+**Invocación:** Llamada desde un cron externo o manualmente. No hay invocación desde el frontend.
+
+---
+
+### `send-ae-morning-report`
+
+Reporte matutino para AEs: deals abiertos, tareas pendientes del día.
+
+{/* TODO: verificar con Santiago la frecuencia de ejecución del cron */}
+
+---
+
+### `send-open-deals-report`
+
+Reporte de deals abiertos (sin cerrar) por AE.
+
+---
+
+### `send-meeting-validation`
+
+Notificación de Slack cuando una reunión necesita ser validada (outcome pendiente).
+
+---
+
+### `send-commit-handoff`
+
+Notificación de Slack cuando un deal pasa a stage "Commited" para handoff al equipo de producción.
+
+---
+
+### `slack-interactions`
+
+Manejador de acciones interactivas de Slack (botones en mensajes). No requiere JWT porque Slack envía un `payload` firmado con `SLACK_SIGNING_SECRET` propio.
+
+{/* TODO: verificar con Santiago qué acciones de Slack están configuradas */}
+
+---
+
+## Funciones de enriquecimiento
+
+### `enrich-company`
+
+Enriquece datos de una empresa (industria, tamaño, país) usando fuentes externas.
+
+{/* TODO: verificar con Santiago qué API externa usa esta función — el código no fue leído en detalle */}
+
+---
+
+### `scrape-linkedin-contact`
+
+Extrae datos de un perfil LinkedIn dado una URL.
+
+{/* TODO: verificar con Santiago la API que usa y si sigue activa */}
+
+---
+
+## Función de administración
+
+### `admin-create-user`
+
+Crea un usuario de Supabase Auth con `service_role` key, evitando el flujo de sign-up público. Requiere JWT de usuario admin.
+
+**Body:**
+```json
+{
+  "email": "nuevo@colombiatechweek.co",
+  "password": "contraseña_temporal",
+  "full_name": "Nombre Apellido"
+}
+```
+
+**Invocado desde:** `src/pages/AdminUsers.tsx`
+
+---
+
+## Notas de rate limiting
+
+Supabase Edge Functions no tienen rate limiting propio. El rate limiting aplicaría desde Google Calendar API o Slack API en sus respectivos límites de plan.

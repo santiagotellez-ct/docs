@@ -1,0 +1,141 @@
+---
+title: "Deployment"
+description: "Cómo está desplegado el proyecto, variables de entorno en producción y proceso de deploy."
+---
+
+## Plataforma
+
+{/* TODO: verificar con Santiago la plataforma de deploy exacta — no hay vercel.json, Dockerfile, ni dokploy config en el repositorio */}
+
+La aplicación en producción está disponible en `crm.colombiatechweek.co`. No se encontró configuración de deploy (Vercel, Netlify, Cloudflare Pages, etc.) en el repositorio. El proceso más probable dado el stack (Vite SPA + Supabase) es un deploy estático.
+
+<Note>
+Si el deploy es en Vercel: el proyecto se conecta directamente al repositorio de GitHub (`santiagotellez-ct/crm-sales-ct`), rama `master`, con build command `npm run build` y output directory `dist`.
+</Note>
+
+## Build de producción
+
+```bash
+npm run build
+```
+
+Genera la carpeta `dist/` con todos los assets estáticos. El archivo de entrada es `dist/index.html`.
+
+```bash
+# Para verificar el build localmente:
+npm run preview
+# Disponible en http://localhost:4173
+```
+
+## Variables de entorno en producción
+
+Configurar en el panel de la plataforma de deploy (ej. Vercel → Settings → Environment Variables):
+
+| Variable | Valor en producción |
+|----------|-------------------|
+| `VITE_SUPABASE_PROJECT_ID` | `esuyjulkvrylglncenhe` |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Clave anon del proyecto Supabase |
+| `VITE_SUPABASE_URL` | `https://esuyjulkvrylglncenhe.supabase.co` |
+
+<Warning>
+Las variables con prefijo `VITE_` se embeben en el bundle en tiempo de build. Cambiarte sus valores requiere un nuevo deploy — no se leen en runtime.
+</Warning>
+
+### Variables de Edge Functions en producción
+
+Se configuran en Supabase Dashboard → Project Settings → Edge Functions → Secrets:
+
+| Secret | Descripción |
+|--------|-------------|
+| `LOVABLE_API_KEY` | Token del gateway de Lovable para Google Calendar |
+| `GOOGLE_CALENDAR_API_KEY` | API key de Google Calendar |
+| `SLACK_BOT_TOKEN` | Bot token de la app de Slack |
+| `SLACK_REPORT_CHANNEL` | Canal de Slack para reportes (ej. `ct-sales`) |
+| `SDR_EMAILS_JSON` | JSON con emails SDR para @-menciones |
+
+## Proceso de deploy
+
+<Steps>
+  <Step title="Merge a master">
+    Todo el desarrollo va directo a `master` (rama principal del repositorio). No hay rama `main` activa.
+  </Step>
+
+  <Step title="Build automático">
+    Si está conectado a Vercel u otra plataforma, el push a `master` dispara el build automáticamente.
+  </Step>
+
+  <Step title="Aplicar migraciones de DB">
+    Si hay nuevas migraciones en `supabase/migrations/`, aplicarlas manualmente en Supabase Dashboard → SQL Editor **antes** de que el nuevo código llegue a producción.
+  </Step>
+
+  <Step title="Verificar Edge Functions">
+    Si hay cambios en `supabase/functions/`, desplegarlas con:
+    ```bash
+    supabase functions deploy <nombre-de-funcion>
+    ```
+    O desplegar todas:
+    ```bash
+    supabase functions deploy
+    ```
+  </Step>
+</Steps>
+
+## CI/CD
+
+No hay configuración de CI/CD (GitHub Actions, CircleCI, etc.) en el repositorio. Los deploys son manuales o via integración directa de la plataforma con GitHub.
+
+## Rollback
+
+<Tabs>
+  <Tab title="Código (frontend)">
+    Si la plataforma es Vercel: ir a Deployments → seleccionar el deploy anterior → "Redeploy".
+    
+    Con Git:
+    ```bash
+    git revert HEAD
+    git push origin master
+    ```
+  </Tab>
+  <Tab title="Migraciones de DB">
+    Las migraciones no tienen rollback automático. Para revertir:
+    1. Escribir la migración inversa manualmente.
+    2. Ejecutarla en Supabase SQL Editor.
+    
+    Las migraciones de `team_members` y `ae_targets` pueden revertirse con:
+    ```sql
+    DROP TABLE IF EXISTS public.ae_targets;
+    ALTER TABLE public.team_members DROP COLUMN IF EXISTS pipe_goal;
+    ALTER TABLE public.team_members DROP COLUMN IF EXISTS meeting_goal;
+    DROP TABLE IF EXISTS public.team_members;
+    ```
+  </Tab>
+</Tabs>
+
+## Dominios y DNS
+
+| Dominio | Servicio |
+|---------|----------|
+| `crm.colombiatechweek.co` | Frontend (SPA) |
+| `esuyjulkvrylglncenhe.supabase.co` | Supabase (PostgREST + Auth + Functions) |
+| `n8n-7391.colombiatechweek.co` | n8n (automatizaciones) |
+
+## Monitoreo y logs
+
+<CardGroup cols={2}>
+  <Card title="Edge Function logs" icon="terminal">
+    Supabase Dashboard → Edge Functions → [nombre] → Logs  
+    Retención: 7 días en plan gratuito / 30 días en Pro
+  </Card>
+  <Card title="DB logs" icon="database">
+    Supabase Dashboard → Logs Explorer  
+    Consultas lentas, errores de RLS, conexiones
+  </Card>
+  <Card title="Realtime" icon="bolt">
+    Supabase Dashboard → Realtime Inspector  
+    Ver eventos activos por canal
+  </Card>
+  <Card title="Auth" icon="lock">
+    Supabase Dashboard → Authentication → Logs  
+    Intentos de login, tokens, errores
+  </Card>
+</CardGroup>

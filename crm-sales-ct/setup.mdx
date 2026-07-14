@@ -1,0 +1,135 @@
+---
+title: "Setup local"
+description: "Cómo clonar, instalar dependencias, configurar variables de entorno y correr el proyecto en local."
+---
+
+## Prerrequisitos
+
+| Requisito | Versión mínima | Notas |
+|-----------|---------------|-------|
+| Node.js | 18.x | Recomendado: 20 LTS |
+| npm | 9.x | Viene con Node 18+ |
+| Cuenta Supabase | — | Acceso al proyecto `esuyjulkvrylglncenhe` |
+| Git | — | — |
+
+<Note>
+El proyecto no usa `pnpm` ni `yarn`. El `package.json` no especifica `packageManager`, usa `npm` por defecto.
+</Note>
+
+## Clonar e instalar
+
+<Steps>
+  <Step title="Clonar el repositorio">
+    ```bash
+    git clone https://github.com/santiagotellez-ct/crm-sales-ct.git
+    cd crm-sales-ct
+    ```
+  </Step>
+
+  <Step title="Instalar dependencias">
+    ```bash
+    npm install
+    ```
+  </Step>
+
+  <Step title="Crear el archivo .env">
+    Crea un archivo `.env` en la raíz del proyecto con las variables listadas abajo.
+  </Step>
+
+  <Step title="Correr en desarrollo">
+    ```bash
+    npm run dev
+    ```
+    La app queda disponible en `http://localhost:8080` (puerto configurado en `vite.config.ts`).
+  </Step>
+</Steps>
+
+## Variables de entorno
+
+Crea `.env` en la raíz. Las tres variables siguientes son las únicas que el frontend consume (todas con prefijo `VITE_`):
+
+| Variable | Descripción | Dónde obtenerla |
+|----------|-------------|-----------------|
+| `VITE_SUPABASE_PROJECT_ID` | ID del proyecto Supabase | Supabase Dashboard → Project Settings → General |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Clave anon/pública del proyecto | Supabase Dashboard → Project Settings → API → `anon public` |
+| `VITE_SUPABASE_URL` | URL REST del proyecto (`https://<id>.supabase.co`) | Supabase Dashboard → Project Settings → API |
+
+```bash
+# .env
+VITE_SUPABASE_PROJECT_ID="esuyjulkvrylglncenhe"
+VITE_SUPABASE_PUBLISHABLE_KEY="eyJ..."
+VITE_SUPABASE_URL="https://esuyjulkvrylglncenhe.supabase.co"
+```
+
+<Warning>
+El archivo `.env` contiene la clave anon pública de Supabase, que es segura de exponer en el cliente siempre que las políticas RLS estén correctamente configuradas. No uses la `service_role` key en el frontend.
+</Warning>
+
+### Variables de las Edge Functions (en Supabase Dashboard → Edge Functions → Secrets)
+
+Estas variables las consumen las Edge Functions en Deno — no van en el `.env` local:
+
+| Variable | Función que la usa | Descripción |
+|----------|--------------------|-------------|
+| `LOVABLE_API_KEY` | `create-calendar-event`, `delete-calendar-event`, `update-calendar-event` | Token del gateway de Lovable para Google Calendar |
+| `GOOGLE_CALENDAR_API_KEY` | `create-calendar-event`, `delete-calendar-event`, `update-calendar-event` | API key de Google Calendar |
+| `SLACK_BOT_TOKEN` | `send-daily-report`, `send-ae-morning-report`, `send-open-deals-report`, `send-meeting-validation`, `send-commit-handoff`, `slack-interactions` | Bot token de Slack |
+| `SLACK_REPORT_CHANNEL` | `send-daily-report` | Nombre del canal Slack (ej. `ct-sales`) |
+| `SDR_EMAILS_JSON` | `send-daily-report` | JSON con emails de SDRs para @-menciones en Slack |
+| `SUPABASE_URL` | Todas las funciones que leen DB | URL del proyecto (auto-inyectada por Supabase) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Funciones con acceso admin a DB | Service role key (auto-inyectada por Supabase) |
+
+## Scripts disponibles
+
+| Comando | Descripción |
+|---------|-------------|
+| `npm run dev` | Servidor de desarrollo en `localhost:8080` con HMR |
+| `npm run build` | Build de producción en `/dist` |
+| `npm run build:dev` | Build en modo desarrollo (útil para debug) |
+| `npm run preview` | Sirve el build de `/dist` localmente |
+| `npm run lint` | Ejecuta ESLint sobre `src/` |
+| `npm run test` | Ejecuta Vitest una sola vez |
+| `npm run test:watch` | Vitest en modo watch |
+
+## Tests
+
+El proyecto tiene una suite mínima en `src/test/`. Para correr:
+
+```bash
+npm run test
+```
+
+Los tests usan **Vitest** + **@testing-library/react** con **jsdom**. El setup está en `src/test/setup.ts`.
+
+<Note>
+La cobertura de tests es básica. No existen tests de integración contra Supabase.
+</Note>
+
+## Troubleshooting común
+
+<Accordion title="El servidor dev no arranca en el puerto 8080">
+  Otro proceso usa el puerto. Cambia el puerto en `vite.config.ts`:
+  ```ts
+  server: { port: 3000 }
+  ```
+  O mata el proceso: `npx kill-port 8080`
+</Accordion>
+
+<Accordion title="Error 401 / session null al abrir la app">
+  Las variables `VITE_SUPABASE_*` no están cargadas o son incorrectas. Verifica que el archivo `.env` existe en la raíz del proyecto (no en `src/`) y reinicia el servidor de desarrollo.
+</Accordion>
+
+<Accordion title="La tabla team_members no existe">
+  La migración `20260703000000_team_members.sql` no ha sido aplicada en el proyecto Supabase. Aplícala desde Supabase Dashboard → SQL Editor.
+</Accordion>
+
+<Accordion title="TypeError: Cannot read properties of undefined (reading 'toLocaleString')">
+  La migración `20260703000001_team_goals.sql` no ha sido aplicada. Las columnas `pipe_goal` y `meeting_goal` no existen en `team_members`. Aplica la migración.
+</Accordion>
+
+<Accordion title="npm install falla con errores de compilación nativa">
+  El paquete `xlsx` tiene bindings opcionales. Si falla, prueba:
+  ```bash
+  npm install --ignore-scripts
+  ```
+</Accordion>

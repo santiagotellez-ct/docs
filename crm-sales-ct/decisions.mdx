@@ -1,0 +1,134 @@
+---
+title: "Decisiones técnicas"
+description: "ADRs ligeros: qué decisiones técnicas se tomaron, por qué, y cuáles son sus consecuencias."
+---
+
+## ADR-001: Supabase como backend completo
+
+**Contexto:** El equipo necesitaba base de datos, autenticación, tiempo real y funciones serverless sin operar un servidor propio.
+
+**Decisión:** Usar Supabase como plataforma completa (PostgreSQL + Auth + Realtime + Edge Functions).
+
+**Alternativas consideradas:**
+- Firebase: descartado por no ser SQL relacional y por dificultad con queries complejos.
+- Backend Express propio: descartado por overhead operativo.
+- PlanetScale + Clerk: descartado por mayor complejidad de integración.
+
+**Consecuencias:**
+- Ventaja: no hay servidor propio que mantener.
+- Ventaja: RLS garantiza seguridad a nivel de fila sin código adicional.
+- Desventaja: el límite de 1000 filas por query de PostgREST requirió implementar paginación manual (`fetchAll` en `useCompanyData.ts:190`).
+- Desventaja: el cliente Supabase JS embebe la `anon key` en el bundle — aceptable si RLS está bien configurado.
+
+---
+
+## ADR-002: SPA con Vite en lugar de Next.js / framework SSR
+
+**Contexto:** La app es interna, no necesita SEO ni SSR. El equipo tenía más familiaridad con Vite + React puro.
+
+**Decisión:** Vite 5 + React 18 como SPA pura.
+
+**Alternativas consideradas:**
+- Next.js App Router: más features (SSR, image optimization) pero más complejidad de configuración y despliegue.
+- Remix: descartado por curva de aprendizaje.
+
+**Consecuencias:**
+- Bundle inicial es toda la app; no hay code splitting por ruta automático más allá de lo que ofrece Vite.
+- Deploy más simple: solo archivos estáticos en cualquier CDN.
+- El tiempo de carga inicial es tolerable porque es herramienta interna.
+
+---
+
+## ADR-003: CompanyDataContext como store central del CRM
+
+**Contexto:** Los datos del pipeline CRM (empresas, contactos, tareas, reuniones) se necesitan en múltiples páginas simultáneamente. Hay actualizaciones en tiempo real vía Supabase Realtime.
+
+**Decisión:** Un único Context React (`CompanyDataContext`) con `useState` que mantiene todo el estado CRM y se suscribe a `postgres_changes`.
+
+**Alternativas consideradas:**
+- Zustand: descartado para no añadir dependencia extra dado que el Context nativo era suficiente.
+- React Query para todo: descartado porque el Realtime push de Supabase no encaja limpiamente con el ciclo de vida de React Query (que es pull-based).
+- Redux: exceso de boilerplate para este caso.
+
+**Consecuencias:**
+- Ventaja: actualizaciones en tiempo real integradas sin polling.
+- Ventaja: un solo lugar de verdad para el CRM.
+- Desventaja: el Context es grande (~1000 líneas en `useCompanyData.ts`). Cambios frecuentes pueden causar re-renders innecesarios si no se usa `useCallback`/`useMemo` correctamente (ya están aplicados).
+- Decisión híbrida: los Deals usan React Query porque tienen lifecycle más simple y no necesitan realtime granular.
+
+---
+
+## ADR-004: React Query para Deals y Team Members
+
+**Contexto:** Los deals y miembros del equipo tienen patrones de acceso más simples y aislados que el pipeline CRM.
+
+**Decisión:** `@tanstack/react-query` para `deals`, `team_members`, `ae_targets` y `events`.
+
+**Consecuencias:**
+- Caché automático con `staleTime: 5min` para team_members.
+- Invalidación explícita tras mutations (`qc.invalidateQueries`).
+- Código más declarativo y menos boilerplate que useEffect manual.
+
+---
+
+## ADR-005: Edge Functions para integraciones externas
+
+**Contexto:** Google Calendar, Slack y n8n requieren credenciales que no pueden vivir en el frontend (bundle público).
+
+**Decisión:** Todas las integraciones externas pasan por Supabase Edge Functions (Deno).
+
+**Consecuencias:**
+- Las credenciales viven como secrets en Supabase, nunca en el bundle del cliente.
+- El cliente llama `supabase.functions.invoke()` — el JWT se propaga automáticamente.
+- Latencia adicional por el hop extra, aceptable para operaciones como agendar reuniones.
+- Las funciones de Slack (`slack-interactions`, `aimfox-contact-webhook`) tienen `verify_jwt = false` porque los llamantes son sistemas externos.
+
+---
+
+## ADR-006: Actualizaciones optimistas en CompanyDataContext
+
+**Contexto:** Las actualizaciones de estado de empresa (mover entre etapas del pipeline) necesitan feedback inmediato para el SDR.
+
+**Decisión:** Actualizar el estado React inmediatamente antes de confirmar con Supabase, con rollback en caso de error.
+
+**Consecuencias:**
+- UX percibida más rápida.
+- Complejidad añadida: hay que mantener el estado anterior para revertir.
+- En `mergeCompanies` se guarda un `snapshot` explícito y se restaura en el catch (`useCompanyData.ts:787`).
+
+---
+
+## ADR-007: Team members dinámicos con fallback a constantes hardcoded
+
+**Contexto:** Los SDRs y AEs estaban hardcodeados como union types TypeScript. Al hacerlos dinámicos desde DB, hay un período donde las migraciones no están aplicadas.
+
+**Decisión:** Los componentes usan `useTeamMemberNames()` pero hacen fallback a `SDR_OPTIONS`/`AE_OPTIONS` si el hook está cargando o devuelve vacío.
+
+**Consecuencias:**
+- La app no se rompe si la migración no está aplicada.
+- Los tipos `Sdr`, `AccountExecutive`, `SecondaryAe` son `string` (no union types estrictos) — se pierde algo de seguridad de tipos en favor de flexibilidad.
+
+---
+
+## ADR-008: Quarters fiscales personalizados
+
+**Contexto:** Colombia Tech Week opera con quarters fiscales que no coinciden con los trimestres del año calendario.
+
+**Decisión:** Los quarters están definidos como constantes en `src/lib/quarters.ts` con fechas de inicio/fin explícitas.
+
+**Consecuencias:**
+- Fácil de ajustar para cada ciclo de eventos.
+- Los quarters futuros (Q3-2026, Q4-2026) están definidos pero sin targets en DB — deben configurarse antes de que el equipo empiece a trabajar en ellos.
+
+---
+
+## ADR-009: Color primario negro en lugar de amarillo
+
+**Contexto:** El diseño original usaba amarillo (`#FFCE00`) como color de acción primario, que tenía bajo contraste con texto blanco.
+
+**Decisión:** `--primary` cambiado a `var(--brand-black)` (`#1C1C1A`) en `src/index.css`.
+
+**Consecuencias:**
+- Mejor contraste y accesibilidad.
+- El `--primary-foreground` pasó a `var(--brand-bone)` para mantener legibilidad sobre fondo oscuro.
+- Los componentes que usaban `bg-yellow-300` / `text-amber-500` fueron migrados a `bg-primary text-primary-foreground`.
