@@ -1,8 +1,8 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "theme": "mint",
-  "name": "Sponsors Hub CT",
-  "description": "Documentación técnica del portal de gestión de patrocinadores de Colombia Tech Week",
+  "name": "Colombia Tech Docs",
+  "description": "Documentación técnica de los productos de Colombia Tech Week",
   "colors": {
     "primary": "#171717",
     "light": "#fafafa",
@@ -14,42 +14,31 @@
     "dark": "/logo/logo.png"
   },
   "navigation": {
-    "tabs": [
+    "dropdowns": [
       {
-        "tab": "Documentación",
+        "dropdown": "Sponsor Hub CT",
+        "icon": "handshake",
         "groups": [
-          {
-            "group": "Empezando",
-            "pages": [
-              "introduction",
-              "setup"
-            ]
-          },
-          {
-            "group": "Sistema",
-            "pages": [
-              "architecture",
-              "database",
-              "api-reference"
-            ]
-          },
-          {
-            "group": "Operación",
-            "pages": [
-              "deployment",
-              "decisions"
-            ]
-          }
+          { "group": "Empezando", "pages": ["sponsor-hub-ct/introduction", "sponsor-hub-ct/setup"] },
+          { "group": "Sistema", "pages": ["sponsor-hub-ct/architecture", "sponsor-hub-ct/database", "sponsor-hub-ct/api-reference"] },
+          { "group": "Operación", "pages": ["sponsor-hub-ct/deployment", "sponsor-hub-ct/decisions"] }
+        ]
+      },
+      {
+        "dropdown": "CRM Sales CT",
+        "icon": "chart-line",
+        "groups": [
+          { "group": "Empezando", "pages": ["crm-sales-ct/introduction", "crm-sales-ct/setup"] },
+          { "group": "Sistema", "pages": ["crm-sales-ct/architecture", "crm-sales-ct/database", "crm-sales-ct/api-reference"] },
+          { "group": "Operación", "pages": ["crm-sales-ct/deployment", "crm-sales-ct/decisions"] }
         ]
       }
     ]
   },
   "navbar": {
     "links": [
-      {
-        "label": "Repositorio",
-        "href": "https://github.com/santiagotellez-ct/sponsors-hub-ct"
-      }
+      { "label": "Sponsor Hub Repo", "href": "https://github.com/santiagotellez-ct/sponsors-hub-ct" },
+      { "label": "CRM Sales Repo", "href": "https://github.com/santiagotellez-ct/crm-sales-ct" }
     ]
   }
 }
